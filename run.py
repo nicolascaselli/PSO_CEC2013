@@ -1,23 +1,14 @@
 import sys
 from cec2013lsgo.cec2013 import Benchmark
-from pso import *
-'''
-cec2013lsgo==2.2
-Cython==0.29.23
-joblib==1.0.1
-numpy==1.19.5
-pkg-resources==0.0.0
-scikit-learn==0.24.2
-scipy==1.5.4
-sklearn==0.0
-threadpoolctl==2.1.0
-'''
+from pso import PSO
 
-INITIAL_FUNCTION = 14
-LAST_FUNCTION = 14
+ORIGINAL_MH = True
+
+INITIAL_FUNCTION = 1
+LAST_FUNCTION = 15
 
 INITIAL_EJECUTION = 1
-LAST_EJECUTION = 1
+LAST_EJECUTION = 31
 
 def main():
     bench = Benchmark()
@@ -27,6 +18,8 @@ def main():
 
         for i in range(INITIAL_EJECUTION, LAST_EJECUTION + 1):
             BKS = info['best']
+            Lower = info['lower']
+            Upper = info['upper']
             D = info['dimension']
             NP = 30
             N_Gen = 5000
@@ -36,10 +29,11 @@ def main():
             gamma = 0.5
             fmin = 0
             fmax = 1
-            Lower = info['lower']
-            Upper = info['upper']
+
             ObjetiveFunction = bench.get_function(num_function)
-            PSO(ObjetiveFunction,  )
+
+            particleSwarm = PSO(ObjetiveFunction, NP, D, Lower, Upper, N_Gen, num_function, ejecution, BKS))
+            particleSwarm.execute(name_logs_file, name_cluster_file, ORIGINAL_MH)
 
 
 def handle_args():
@@ -101,5 +95,4 @@ def handle_args():
 if __name__ == '__main__':
     # Arguments handling
     handle_args()
-
     main()
