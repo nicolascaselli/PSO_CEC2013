@@ -8,7 +8,7 @@ INITIAL_FUNCTION = 1
 LAST_FUNCTION = 15
 
 INITIAL_EJECUTION = 1
-LAST_EJECUTION = 31
+LAST_EJECUTION = 1
 
 def main():
     bench = Benchmark()
@@ -16,7 +16,7 @@ def main():
         info = bench.get_info(num_function)
         print(f'\nFunction {num_function}: {info}')
 
-        for i in range(INITIAL_EJECUTION, LAST_EJECUTION + 1):
+        for ejecution in range(INITIAL_EJECUTION, LAST_EJECUTION + 1):
             BKS = info['best']
             Lower = info['lower']
             Upper = info['upper']
@@ -30,9 +30,12 @@ def main():
             fmin = 0
             fmax = 1
 
-            ObjetiveFunction = bench.get_function(num_function)
+            objetiveFunction = bench.get_function(num_function)
+            name_ejecution_file = f'function{num_function}_{ejecution}.csv'
+            name_logs_file = 'Logs/' + name_ejecution_file
+            name_cluster_file = 'Logs/clusters/' + name_ejecution_file
 
-            particleSwarm = PSO(ObjetiveFunction, NP, D, Lower, Upper, N_Gen, num_function, ejecution, BKS))
+            particleSwarm = PSO(objetiveFunction, NP, D, Lower, Upper, N_Gen, num_function, ejecution, BKS)
             particleSwarm.execute(name_logs_file, name_cluster_file, ORIGINAL_MH)
 
 
