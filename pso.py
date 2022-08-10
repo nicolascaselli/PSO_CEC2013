@@ -13,9 +13,6 @@
 
 from __future__ import division
 
-import matplotlib.pyplot as plt
-from sklearn.neighbors import NearestNeighbors
-
 from scripts.utils import *
 import random
 import time
