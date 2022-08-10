@@ -3,6 +3,8 @@ from sklearn import cluster
 from sklearn.cluster import DBSCAN
 import math
 
+from sklearn.neighbors import NearestNeighbors
+
 
 def parseSeconds(seconds):
     SEC_PER_DAYS = 84600
@@ -32,7 +34,16 @@ def get_distance(v1, v2):
 
     return math.sqrt(distance)
 
-
+def get_knn_skrlen_eps_value(solutions):
+    '''
+    Retorna el promedio de la distancia euclediana de las soluciones
+    :param solutions: soluciones de la MH
+    :return: promedio de las distancias
+    '''
+    nbrs = NearestNeighbors(n_neighbors=3, metric='euclidean').fit(solutions)
+    distances, indices = nbrs.kneighbors(solutions)
+    distances = distances[:, 2]
+    return np.mean(distances)
 def get_epsilon_value_knn(k_value, puntos):
     mean_total_puntos = 0.0
 
@@ -59,8 +70,10 @@ def get_epsilon_value_knn(k_value, puntos):
     return mean_total_puntos
 
 
-def clusterize_solutions(sols, min_samp):
-    epsilon = get_epsilon_value_knn(min_samp, sols)
+def clusterize_solutions(sols, min_samp, epsilon=None):
+    if epsilon == None:
+        #epsilon = get_epsilon_value_knn(min_samp, sols)
+        epsilon = get_knn_skrlen_eps_value(sols)
     model = DBSCAN(eps=epsilon, min_samples=min_samp)
     clusters = model.fit(X=sols)
     return clusters, epsilon

@@ -12,6 +12,10 @@
 # --- IMPORT DEPENDENCIES ------------------------------------------------------+
 
 from __future__ import division
+
+import matplotlib.pyplot as plt
+from sklearn.neighbors import NearestNeighbors
+
 from scripts.utils import *
 import random
 import time
@@ -113,7 +117,16 @@ class PSO():
 
         self.X = []
         self.fitness = []
+        self.swarm = []
 
+    def sort_by_fitness(self):
+        '''
+        sort all the particles by fitness (error_i)
+        @:param l_swarm: list of particles
+        @:return l_swarm: list of particles sorted by err_i
+        '''
+
+        self.swarm = sorted(self.swarm, key=lambda particle: particle.err_i)
 
 
     def init_particleSwarm(self):
@@ -139,6 +152,12 @@ class PSO():
         percentage = (current_difference * 100) / past_best
         return percentage
 
+    def update_improve_percentage(self, past_best):
+        '''
+        Actualiza el porcentaje de mejora
+        '''
+        self.improve_percentage = self.calculate_percentage(past_best, self.err_best_g)
+
     def check_improve(self, clusters_writter, past_best, iteration):
         '''
         Aplica el autonomo
@@ -147,16 +166,16 @@ class PSO():
         global INCREMENTS_PARTICLES_PER_CLUSTER
 
         # Se revisa si el porcentaje de mejora es menor que el aceptado, si lo es
-        # se implementan las estrategias de autoajuste
+        # se implementan las estrategias de auto ajuste
         if self.improve_percentage > IMPROVE_PERCENTAGE_ACCEPTED:
-            # Si la solucion ha mejorado, y no se ha llegado al limite se decrementan los murcielagos
+            # Si la solucion ha mejorado, y no se ha llegado al límite se decrementan los murcielagos
             if self.NP - INCREMENTS_PARTICLES >= MIN_PARTICLES:
                 # Se decrementan la cantidad de murcielagos
                 self.NP -= INCREMENTS_PARTICLES
 
-                # Se eliminan los peores murcielagos con sus datos de cada lista
+                # Se eliminan las peores particulas
                 self.fitness = self.fitness[:-INCREMENTS_PARTICLES]
-                self.X = self.X[:-INCREMENTS_PARTICLES]
+                self.swarm = self.swarm[:-INCREMENTS_PARTICLES]
         else:
             print(f"Improvement percetage: {round(self.improve_percentage, 2)}%  Applying self-tunning strategies")
 
@@ -164,6 +183,11 @@ class PSO():
 
             # Se clusterizan las soluciones
             k = 3
+
+            for i in range(0, self.NP):
+                self.X[i] = self.swarm[i].position_i
+                self.fitness[i] = self.swarm[i].err_i
+
             clusters, epsilon = clusterize_solutions(self.X, k)
             labels = clusters.labels_
             unique_labels = np.unique(labels)
@@ -198,11 +222,123 @@ class PSO():
 
             # Si hay nuevas soluciones se agregan
             for element in new_solutions:
-                nest, index = element
-                self.add_new_nest(nest, index)
+                particle, index = element
+                self.add_new_particle(particle, index)
 
             # Se actualiza el mejor fitness
-            self.best_nest()
+            self.best_particle()
+
+    def best_particle(self):
+        '''
+        Busca y actualiza el mejor murcielago
+        '''
+        j = 0
+        for i in range(self.NP):
+            if self.fitness[i] < self.fitness[j]:
+                j = i
+
+        self.set_best_bat(self.x[j], self.fitness[j])
+    def replace_cluster(self, clusters):
+        '''
+        Reemplaza la mitad mas mala de los clusters, con soluciones generados aleatorias
+        '''
+        # Diccionario que contiene la informacion para calcular el promedio de cada cluster.
+        # Para cada cluster se puede acceder a su informacion por su label,
+        # como valor guarda un diccionario para organizar su informacion
+        fitness_clusters = {l: {'sum': 0, 'total': 0} for l in np.unique(clusters.labels_)}
+
+        # Se obtiene la suma de los fitness y el total de elementos en cada cluster
+        for (index, label) in enumerate(clusters.labels_):
+            fitness_clusters[label]['sum'] += self.fitness[index]
+            fitness_clusters[label]['total'] += 1
+
+        for label in fitness_clusters:
+            # Se calcula el promedio
+            suma = fitness_clusters[label]['sum']
+            total = fitness_clusters[label]['total']
+            mean_cluster = suma / total
+
+            percentage_diff = self.calculate_percentage(self.F_min, mean_cluster)
+
+            # if -1 <= self.F_min - mean_cluster <= 1:
+            if -DIFF_CLUSTER_PERCENTAGE_ACCEPTED <= percentage_diff <= DIFF_CLUSTER_PERCENTAGE_ACCEPTED:
+                # Se reemplaza la mitad mas mala del cluster con soluciones aleatorias usando la funcion de exploracion
+                cant = total // 2
+
+                for index in range(self.NP - 1, -1, -1):
+                    if cant <= 0:
+                        break
+
+                    # Si el elemento actual pertenece al cluster que queremos repoblar
+                    if clusters.labels_[index] == label:
+                        self.x[index], self.fitness[index] = self.generate_random_solution(self.x[index])
+                        self.swarm[index].err_i = self.fitness[index]
+                        self.swarm[index].position_i = self.X[index]
+                        cant -= 1
+
+            print(percentage_diff, self.F_min - mean_cluster, self.F_min, mean_cluster, label)
+
+    def generate_random_solution(self, solution):
+        '''
+        Genera una nueva solucion aleatoria para explorar el expacio de busqueda
+        '''
+        for j in range(self.D):
+            random = np.random.uniform(0, 1)
+            solution[j] = self.Lower + (self.Upper - self.Lower) * random
+
+        fitness = self.function(solution)
+
+        return solution, fitness
+    def increment_cluster(self, clusters, Amean = None):
+        '''
+        Se incrementa la poblacion de los clusters, agregando particulas generados
+        alrededor de los mejores de cada cluster
+        '''
+        if Amean == None:
+            Amean = 1
+        x_is_modified = False
+        best_bat_clusters = {l: {'index': [], 'cant': 0} for l in np.unique(clusters.labels_)}
+
+        # Se guardan los índices de los INCREMENTS_BATS_PER_CLUSTER mejores partículas de cada cluster
+        for index, label in enumerate(clusters.labels_):
+            if best_bat_clusters[label]['cant'] < INCREMENTS_PARTICLES_PER_CLUSTER:
+                best_bat_clusters[label]['index'].append(index)
+                best_bat_clusters[label]['cant'] += 1
+
+        # Se guardan las nuevas soluciones generadas, junto con el índice de la partícula
+        # sobre el cual se generó la solución local
+        new_solutions = []
+
+        # Se generan INCREMENTS_BATS_PER_CLUSTER soluciones locales de los mejores partículas de cada cluster
+        for label in best_bat_clusters:
+            for index in best_bat_clusters[label]['index']:
+                # Se encuentra una nueva solucion local
+                new_solution = np.empty(self.D)
+                new_solution = self.generate_local_solution(new_solution, self.x[index], Amean)
+                new_solutions.append((new_solution, index))
+
+        return new_solutions
+
+    def simple_bounds(self, value, lower, upper):
+        '''
+        Le aplica las bandas a 'value'
+        '''
+        if (value > upper):
+            value = upper
+
+        if (value < lower):
+            value = lower
+
+        return value
+    def generate_local_solution(self, solution, particle, Amean):
+        '''
+        Genera una nueva solución local alrededor de la solución "particle"
+        '''
+        for j in range(self.D):
+            random = np.random.uniform(-1.0, 1.0)
+            solution[j] = self.simple_bounds(particle[j] + random * Amean, self.Lower, self.Upper)
+
+        return solution
     def execute(self, name_logs_file='logs.csv', name_cluster_logs_file='clusters.csv', original_MH=True, interval_logs=100):
         '''
         Ejecuta la MH con los parámetros creados en el constructor
@@ -238,19 +374,34 @@ class PSO():
         clusters_file = open(name_cluster_logs_file, mode='w')
         cluster_writter = csv.writer(clusters_file, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
         cluster_writter.writerow(
-            'seed,function,ejecution,iteration,cantClusters,min_value,max_value,cantElements,meanCluster,epsilon,k,label'.split(
-                ','))
+            'seed'
+            ',function'
+            ',ejecution'
+            ',iteration'
+            ',cantClusters'
+            ',min_value'
+            ',max_value'
+            ',cantElements'
+            ',meanCluster'
+            ',epsilon'
+            ',k'
+            ',label'.split(','))
 
         # establish the swarm
         self.init_particleSwarm()
-        swarm = []
+
         for i in range(0, self.NP):
-            swarm.append(Particle(self.X[i]))
+            self.swarm.append(Particle(self.X[i]))
 
         # begin optimization loop
         i = 0
         while i <= self.N_Gen:
+            #checks if the autonomous needs to intervene
             if (i % 100 == 0):
+                #order the list of particle by fitness
+                self.sort_by_fitness()
+                self.update_improve_percentage(past_best)
+
                 # Logs purposes
 
                 MH_params = f'{self.D},{self.NP},{self.N_Gen}'
@@ -266,23 +417,23 @@ class PSO():
                         self.check_improve(cluster_writter, past_best, i)
 
                     past_best = self.F_min
+            #end of autonomous section
             # print i,err_best_g
             # cycle through particles in swarm and evaluate fitness
             for j in range(0, self.NP):
-                swarm[j].evaluate(self.function)
+                self.swarm[j].evaluate(self.function)
 
                 # determine if current particle is the best (globally)
-                if swarm[j].err_i < err_best_g or err_best_g == -1:
-                    self.improve_percentage = self.calculate_percentage(err_best_g, swarm[j].err_i)
-                    pos_best_g = list(swarm[j].position_i)
-                    err_best_g = float(swarm[j].err_i)
+                if self.swarm[j].err_i < err_best_g or err_best_g == -1:
+                    self.improve_percentage = self.calculate_percentage(err_best_g, self.swarm[j].err_i)
+                    pos_best_g = list(self.swarm[j].position_i)
+                    err_best_g = float(self.swarm[j].err_i)
                     self.F_min = err_best_g
-
 
             # cycle through swarm and update velocities and position
             for j in range(0, self.NP):
-                swarm[j].update_velocity(pos_best_g)
-                swarm[j].update_position(self.Lower, self.Upper)
+                self.swarm[j].update_velocity(pos_best_g)
+                self.swarm[j].update_position(self.Lower, self.Upper)
             #print(f'ITER:{i + 1} - err_best_g:{err_best_g}')
             # print(f'pos_best_g:{pos_best_g}')
 
@@ -292,8 +443,23 @@ class PSO():
         print('FINAL:')
         print(pos_best_g)
         print(err_best_g)
+
+    def add_new_particle(self, new_particle, index):
+        '''
+        Agrega un nuevo murcielago a la poblacion
+        '''
+        self.x = np.append(self.x, [new_particle], axis=0)
+        self.fitness.append(self.function(new_particle))
+        self.NP += 1
+        self.swarm.append(Particle(new_particle))
+        self.swarm[self.NP].velocity_i = self.swarm[index].velocity_i
+        self.swarm[self.NP].evaluate(self.function)
+
+
+
 # --- RUN ----------------------------------------------------------------------+
 if __name__ == '__main__':
+    '''
     bench = Benchmark()
     info = bench.get_info(1)
     min_bound = info['lower']
@@ -301,6 +467,7 @@ if __name__ == '__main__':
     initial = np.random.uniform(low=min_bound, high=max_bound, size=info['dimension'])  # initial starting location [x1,x2...]
     ObjetiveFunction = bench.get_function(1)
     print(initial)
+    
     print(f"inicial = {len(initial)}"
           f"\ninfo = {info}"
           f"\nObjetiveFunction = {ObjetiveFunction}"
@@ -315,8 +482,53 @@ if __name__ == '__main__':
     SV.append(x)
     x = (max_bound - min_bound) * np.random.rand(5, ) + min_bound
     SV.append(x)
-    print(SV)
     #bounds = [(-10, 10), (-10, 10), (-10, 10), (-10, 10)]  # input bounds [(x1_min,x1_max),(x2_min,x2_max)...]
     #PSO(ObjetiveFunction, initial, min_bound, max_bound, num_particles=15, maxiter=2500)
+    '''
+    bench = Benchmark()
+    info = bench.get_info(1)
+
+    BKS = info['best']
+    Lower = info['lower']
+    Upper = info['upper']
+    D = info['dimension']
+    NP = 15
+    N_Gen = 5000
+    A = 0.95
+    r = 0.1
+    alpha = 0.9
+    gamma = 0.5
+    fmin = 0
+    fmax = 1
+
+    objetiveFunction = bench.get_function(1)
+    name_ejecution_file = f'function{1}_{1}.csv'
+    name_logs_file = 'Logs/' + name_ejecution_file
+    name_cluster_file = 'Logs/clusters/' + name_ejecution_file
+
+    swarm = PSO(objetiveFunction, NP, D, Lower, Upper, N_Gen, 1, 1, BKS)
+    swarm.init_particleSwarm()
+    # establish the swarm
+    l_swarm = []
+    for i in range(0, NP):
+        l_swarm.append(Particle(swarm.X[i]))
+    for i in range(0, NP):
+        l_swarm[i].evaluate(objetiveFunction)
+
+    #ordenamos el objeto por fitnes (err_i
+    l_swarm = sorted(l_swarm, key=lambda particle: particle.err_i)
+    solutions = []
+    for i in range(0, NP):
+        solutions.append(l_swarm[i].position_i)
+    print(solutions)
+    clusters, epsilon = clusterize_solutions(solutions, 3)
+    labels = clusters.labels_
+    unique_labels = np.unique(labels)
+    cant_clusters = unique_labels.shape[0]
+    print(f'\nClusters:{clusters.labels_}')
+    print(f'\nepsilon:{epsilon}')
+    print(f'\nlabels: {labels}')
+    print(f'\nunique_labels: {unique_labels}')
+    print(f'\ncant_clusters: {cant_clusters}')
 
 # --- END ----------------------------------------------------------------------+
